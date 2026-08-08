@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { db } from '@/firebase';
 import { collection, addDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
-import { Leaf, Coffee, PartyPopper, Clock, Phone, Mail, MapPin, Search, CheckCircle2, ShieldCheck, Heart, Sparkles, Droplets, ArrowRight } from 'lucide-react';
+import { Leaf, Coffee, PartyPopper, Clock, Phone, Mail, MapPin, Search, CheckCircle2, ArrowRight } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 
 interface CartItem {

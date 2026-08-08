@@ -54,10 +54,10 @@ export default function AdminDashboard() {
   // Form Fields
   const [batchCode, setBatchCode] = useState('');
   const [productName, setProductName] = useState('');
-  const [quantity, setQuantity] = useState('100');
-  const [producedBy, setProducedBy] = useState('steph');
-  const [producedDate, setProducedDate] = useState('');
-  const [expiryDate, setExpiryDate] = useState('');
+  const [quantity] = useState('100');
+const [producedBy] = useState('steph');
+const [producedDate] = useState('');
+const [expiryDate] = useState('');
   const [nearTxUrl, setNearTxUrl] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
