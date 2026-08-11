@@ -36,16 +36,52 @@ export default function ProductDetailPage() {
     setSubmitting(true);
 
     try {
+      // 1. Establish the Batch ID and fallback ingredients for the blockchain
+      const orderBatchId = product.batchNumber || `BATCH-${Date.now().toString().slice(-6)}`;
+      const productIngredients = [product.type || 'Standard Beverage', product.productName];
+
+      // 2. Save to Firebase with pending hash status
       await addDoc(collection(db, 'orders'), {
         blendName: product.productName,
         price: product.price,
-        batchId: product.batchNumber || `BATCH-${Date.now().toString().slice(-6)}`,
+        batchId: orderBatchId,
         type: product.type || 'Standard Beverage',
+        ingredients: productIngredients,
         status: 'Order Placed',
         createdAt: serverTimestamp(),
+        nearHash: 'Minting on-chain...',
+        chainHash: 'Minting on-chain...',
+        isMintedOnChain: false
       });
 
-      toast.success(`Order placed for ${product.productName}!`);
+      toast.info(`Order placed for ${product.productName}! Minting to blockchain...`);
+
+      // 3. Trigger Python Backend API
+      try {
+        const response = await fetch('http://localhost:8000/api/mint-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            batchId: orderBatchId,
+            blendName: product.productName,
+            producedBy: 'Mixit Smoothies Lab',
+            ingredients: productIngredients,
+          }),
+        });
+
+        const result = await response.json();
+
+        if (result.status === 'success') {
+          toast.success('Successfully secured on NEAR Mainnet!');
+        } else {
+          toast.error('Blockchain delay, but order was saved.');
+          console.error(result.detail);
+        }
+      } catch (backendError) {
+        console.error("Could not connect to Python backend:", backendError);
+      }
+
+      // 4. Redirect to orders page
       navigate('/orders');
     } catch (error) {
       console.error("Error placing order:", error);

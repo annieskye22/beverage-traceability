@@ -161,7 +161,11 @@ export default function LandingPage() {
     try {
       const orderBatchId = `ORD-${Date.now().toString().slice(-6)}`;
       const blendSummary = cart.map((i) => `${i.quantity}x ${i.name}`).join(', ');
+      
+      // Map cart items into an ingredients array for the blockchain
+      const orderIngredients = cart.map((i) => `${i.quantity}x ${i.name}`);
 
+      // 1. Save to Firebase first to establish the record
       await addDoc(collection(db, 'orders'), {
         userId: user.uid,
         userEmail: user.email,
@@ -170,10 +174,37 @@ export default function LandingPage() {
         blendName: blendSummary,
         price: totalAmount,
         batchId: orderBatchId,
+        ingredients: orderIngredients, 
         status: 'Order Placed',
         createdAt: serverTimestamp(),
+        nearHash: 'Minting on-chain...', // Temporary placeholder
+        chainHash: 'Minting on-chain...', 
+        isMintedOnChain: false
       });
 
+      // 2. Call Python FastAPI Backend to mint on NEAR
+      try {
+        console.log("Sending payload to Python Blockchain API...");
+        const response = await fetch('http://localhost:8000/api/mint-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            batchId: orderBatchId,
+            blendName: 'Mixit Menu Order',
+            producedBy: 'Mixit Smoothies Lab',
+            ingredients: orderIngredients,
+          }),
+        });
+        
+        const result = await response.json();
+        if (result.status === 'success') {
+          console.log('Successfully minted! Real Hash:', result.nearHash);
+        }
+      } catch (backendError) {
+        console.error("Could not connect to Python backend:", backendError);
+      }
+
+      // 3. Send Confirmation Email
       try {
         await emailjs.send(
           'service_3y8pnal',

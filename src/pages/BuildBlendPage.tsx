@@ -35,9 +35,17 @@ export default function BuildBlendPage() {
 
     setSubmitting(true);
     try {
-      // Generate a mock batch ID for this custom build
+      // Generate a unique batch ID for this custom build
       const customBatchId = `CUSTOM-${Date.now().toString().slice(-6)}`;
+      
+      // Package the custom sliders into an ingredients array for the blockchain JSON
+      const customIngredients = [
+        base,
+        `Fruit Blend Ratio: ${fruitRatio[0]}%`,
+        `Sweetness Level: ${sweetness[0]}%`
+      ];
 
+      // 1. Save to Firebase first (so Python has a record to update)
       await addDoc(collection(db, 'orders'), {
         blendName,
         base,
@@ -46,12 +54,40 @@ export default function BuildBlendPage() {
         specialNotes,
         price: calculatePrice(),
         batchId: customBatchId,
+        ingredients: customIngredients,
         status: 'Order Placed',
         createdAt: serverTimestamp(),
+        nearHash: 'Minting on-chain...', // Temporary placeholder
+        chainHash: 'Minting on-chain...', 
+        isMintedOnChain: false
       });
 
-      toast.success(`Order placed for ${blendName}! Batch ID: ${customBatchId}`);
+      toast.info('Order placed! Minting batch to blockchain...');
+
+      // 2. Call Python FastAPI Backend to mint on NEAR
+      const response = await fetch('http://localhost:8000/api/mint-batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          batchId: customBatchId,
+          blendName: blendName,
+          producedBy: 'Mixit Smoothies Lab',
+          ingredients: customIngredients,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.status === 'success') {
+        toast.success('Successfully secured on NEAR Mainnet!');
+      } else {
+        toast.error('Blockchain delay, but order was saved.');
+        console.error(result.detail);
+      }
+
+      // 3. Redirect to orders page to see the generated QR code
       navigate('/orders');
+      
     } catch (error: any) {
       console.error("Error saving order:", error);
       toast.error('Failed to submit order. Please try again.');

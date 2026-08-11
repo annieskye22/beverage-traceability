@@ -20,10 +20,10 @@ export default function AdminNav() {
 
   return (
     <header className="bg-white border-b border-[#EAE2DC] px-8 py-4 flex items-center justify-between shadow-sm print:hidden">
-      <div className="flex items-center gap-2">
-        <span className="text-[#E11D48] text-lg">⚙️</span>
-        <span className="font-extrabold text-base text-[#E11D48]">Mixit Admin</span>
-      </div>
+      <Link to="/" className="flex items-center gap-2 group transition" title="Go to Landing Page">
+  <span className="text-[#E11D48] text-lg group-hover:scale-110 transition-transform">⚙️</span>
+  <span className="font-extrabold text-base text-[#E11D48] group-hover:underline">Mixit Admin</span>
+</Link>
 
       <nav className="flex items-center gap-8 text-xs font-bold text-[#2B1E1A]/60">
         {navItems.map((item) => {

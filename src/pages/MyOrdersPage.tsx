@@ -4,6 +4,7 @@ import { db } from '@/firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
 import { ShieldCheck, ShoppingBag } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 
 export default function MyOrdersPage() {
   const { user } = useAuth();
@@ -73,31 +74,57 @@ export default function MyOrdersPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {orders.map((order) => (
-              <div key={order.id} className="bg-card border border-border rounded-xl p-5 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-bold text-xs bg-muted px-2 py-0.5 rounded text-foreground">
-                      {order.batchId}
-                    </span>
-                    <span className="text-xs font-bold text-rose-600 bg-rose-500/10 px-2.5 py-0.5 rounded-full">
-                      {order.status || 'Processing'}
-                    </span>
-                  </div>
-                  <h3 className="font-bold text-base mt-1">{order.blendName}</h3>
-                  <p className="text-xs font-bold text-primary">₦{order.price?.toLocaleString()}</p>
-                </div>
+            {orders.map((order) => {
+              // Read the live hash from Firebase, handle the temporary placeholder
+              const displayHash = order.nearHash || order.chainHash;
+              const isPending = displayHash === 'Minting on-chain...';
 
-                <div className="flex items-center gap-3 border-t md:border-t-0 border-border pt-3 md:pt-0">
-                  <a
-                    href={`/trace?batchId=${order.batchId}`}
-                    className="text-xs font-bold border border-border px-3 py-1.5 rounded-md hover:bg-muted transition flex items-center gap-1.5"
-                  >
-                    <ShieldCheck className="h-3.5 w-3.5 text-rose-600" /> Trace On-Chain
-                  </a>
+              return (
+                <div key={order.id} className="bg-card border border-border rounded-xl p-5 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-xs bg-muted px-2 py-0.5 rounded text-foreground">
+                        {order.batchId}
+                      </span>
+                      <span className="text-xs font-bold text-rose-600 bg-rose-500/10 px-2.5 py-0.5 rounded-full">
+                        {order.status || 'Processing'}
+                      </span>
+                    </div>
+                    <h3 className="font-bold text-base mt-1">{order.blendName}</h3>
+                    <p className="text-xs font-bold text-primary">₦{order.price?.toLocaleString()}</p>
+                    
+                    {/* Display the NEAR Transaction Hash right on the order card */}
+                    {displayHash && (
+                      <p className="text-[11px] text-muted-foreground mt-2">
+                        Tx Hash: <span className="font-mono font-bold text-rose-600">
+                          {isPending ? 'Pending...' : `${displayHash.slice(0, 16)}...`}
+                        </span>
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-4 border-t md:border-t-0 border-border pt-3 md:pt-0">
+                    <a
+                      href={`/trace?batchId=${order.batchId}`}
+                      className="text-xs font-bold border border-border px-4 py-2 rounded-md hover:bg-muted transition flex items-center gap-1.5"
+                    >
+                      <ShieldCheck className="h-4 w-4 text-rose-600" /> Trace On-Chain
+                    </a>
+
+                  {/* Dynamic QR Code Linked Directly to Your Live App */}
+<div className="border-l border-border pl-4 bg-white rounded-md flex items-center justify-center">
+  <QRCodeSVG 
+    value={`https://beverage-traceability-kb8r-one.vercel.app/trace?batchId=${order.batchId}`} 
+    size={80} 
+    level="H"           // Highest error correction for better scanning
+    includeMargin={true} // CRITICAL: Adds white space border so scanners can find the code
+    className="p-1"
+  />
+</div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </main>

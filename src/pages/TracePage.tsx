@@ -4,12 +4,13 @@ import { db } from '@/firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 
 interface CompleteTraceData {
+  id: string; // Added to hold the Firestore Document ID
   blendName?: string;
   batchId?: string;
   price?: number;
   producedBy?: string;
   producedDate?: string;
-  createdAt?: any;
+  createdAt?: any; // Consider typing this as Firebase Timestamp if used later
   ingredients?: string[];
   supplier?: string;
   origin?: string;
@@ -32,19 +33,17 @@ export default function TracePage() {
     async function fetchTraceData() {
       try {
         const ordersRef = collection(db, 'orders');
-        let q;
-
-        if (batchIdParam) {
-          q = query(ordersRef, where('batchId', '==', batchIdParam));
-        } else {
-          q = query(ordersRef);
-        }
+        // Define q properly to avoid TypeScript inference issues
+        const q = batchIdParam 
+          ? query(ordersRef, where('batchId', '==', batchIdParam)) 
+          : query(ordersRef);
 
         const querySnapshot = await getDocs(q);
         const fetchedData: CompleteTraceData[] = [];
 
         querySnapshot.forEach((doc) => {
-          fetchedData.push(doc.data() as CompleteTraceData);
+          // Push the doc.id into the object for a safe React key
+          fetchedData.push({ id: doc.id, ...doc.data() } as CompleteTraceData);
         });
 
         setCards(fetchedData);
@@ -61,7 +60,7 @@ export default function TracePage() {
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-[50vh]">
-        <p className="text-gray-500 font-medium">Retrieving Verified NEAR On-Chain Batch Records...</p>
+        <p className="text-gray-500 font-medium animate-pulse">Retrieving Verified NEAR On-Chain Batch Records...</p>
       </div>
     );
   }
@@ -93,7 +92,7 @@ export default function TracePage() {
 
             return (
               <div 
-                key={index} 
+                key={item.id} // Changed from index to unique Firestore ID
                 className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm hover:shadow-lg transition-all relative flex flex-col justify-between"
               >
                 <div>
@@ -123,24 +122,18 @@ export default function TracePage() {
 
                   {/* Key Metadata Table */}
                   <div className="space-y-2 text-xs border-t border-b border-gray-100 py-3 my-3">
-                    
-                    {/* Produced By & Date */}
                     <div className="flex justify-between text-gray-600">
                       <span className="text-gray-400">Produced By:</span>
                       <span className="font-bold text-gray-800">{displayProducer}</span>
                     </div>
-
                     <div className="flex justify-between text-gray-600">
                       <span className="text-gray-400">Date Produced:</span>
                       <span className="font-bold text-gray-800">{displayProducedDate}</span>
                     </div>
-
-                    {/* Supplier & Origin */}
                     <div className="flex justify-between text-gray-600">
                       <span className="text-gray-400">Supplier:</span>
                       <span className="font-semibold text-gray-700">{displaySupplier}</span>
                     </div>
-
                     <div className="flex justify-between text-gray-600">
                       <span className="text-gray-400">Origin / Harvest Date:</span>
                       <span className="font-semibold text-gray-700">{displayOrigin} ({displayHarvestDate})</span>
@@ -174,9 +167,15 @@ export default function TracePage() {
                 <div className="pt-3 border-t border-gray-100 bg-gray-50 -mx-6 -mb-6 p-4 rounded-b-3xl mt-2">
                   <div className="flex justify-between items-center text-[11px]">
                     <span className="text-gray-500 font-medium">NEAR Chain Hash:</span>
-                    <span className="font-mono text-purple-700 font-bold bg-purple-100 px-2 py-0.5 rounded">
+                    {/* Made the hash clickable to point to a block explorer */}
+                    <a 
+                      href={`https://nearblocks.io/txns/${displayNearHash}`}
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="font-mono text-purple-700 font-bold bg-purple-100 px-2 py-0.5 rounded hover:bg-purple-200 transition-colors cursor-pointer"
+                    >
                       {displayNearHash}
-                    </span>
+                    </a>
                   </div>
                 </div>
 

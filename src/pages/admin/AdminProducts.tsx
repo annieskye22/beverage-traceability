@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import AdminNav from '@/components/AdminNav';
 import { Button } from '@/components/ui/button';
 import { db } from '@/firebase';
-import { collection, addDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 import { QrCode, Printer, ExternalLink, Plus, Package } from 'lucide-react';
 
 interface ProductBatch {
@@ -17,7 +17,8 @@ interface ProductBatch {
   producedBy?: string;
   chainTxHash?: string;
   notes?: string;
-  ingredients?: string;
+  ingredients?: string[];
+  imageUrl?: string;
 }
 
 export default function AdminProducts() {
@@ -26,15 +27,17 @@ export default function AdminProducts() {
   const [qrModalBatch, setQrModalBatch] = useState<ProductBatch | null>(null);
   const [printModalBatch, setPrintModalBatch] = useState<ProductBatch | null>(null);
 
-  // Form Fields
+  // Form Fields (Defaults removed, Price added)
   const [batchCode, setBatchCode] = useState('');
   const [name, setName] = useState('');
-  const [quantity, setQuantity] = useState('100');
-  const [producedBy, setProducedBy] = useState('steph');
+  const [category, setCategory] = useState('Smoothies');
+  const [price, setPrice] = useState(''); // <-- Added Price state
+  const [quantity, setQuantity] = useState(''); // <-- Default removed
+  const [producedBy, setProducedBy] = useState(''); // <-- Default removed
   const [producedDate, setProducedDate] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
-  const [nearTxUrl, setNearTxUrl] = useState('');
-  const [notes, setNotes] = useState('');
+  const [ingredientsInput, setIngredientsInput] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -55,34 +58,86 @@ export default function AdminProducts() {
 
     try {
       const finalBatchCode = batchCode.trim() || `MX-BATCH-${Math.floor(100000 + Math.random() * 900000)}`;
+      const finalName = name || 'Organic Fruit Beverage';
+      const finalCategory = category || 'Smoothies';
+      const finalProducedBy = producedBy.trim() || 'Admin';
+      const finalProducedDate = producedDate || new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+      const finalExpiryDate = expiryDate || '16 Jan 2030';
+      const finalImageUrl = imageUrl.trim() || 'https://images.unsplash.com/photo-1553530666-ba11a7da3888?w=500';
+      
+      const ingredientsList = ingredientsInput
+        ? ingredientsInput.split(',').map((i) => i.trim())
+        : ['Fresh Organic Produce', 'Natural Spring Water'];
 
-      await addDoc(collection(db, 'products'), {
-        name: name || 'Smoothie Blend',
+      // 1. Save product batch to Firebase
+      const productRef = await addDoc(collection(db, 'products'), {
+        name: finalName,
+        category: finalCategory,
         batchId: finalBatchCode,
-        producedBy: producedBy || 'steph',
-        producedDate: producedDate || new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-        expiryDate: expiryDate || '16 Jan 2030',
-        chainTxHash: nearTxUrl.trim(),
-        notes: notes || '',
-        price: 2500,
-        category: 'Smoothies',
-        quantityAvailable: Number(quantity) || 100,
+        producedBy: finalProducedBy,
+        producedDate: finalProducedDate,
+        expiryDate: finalExpiryDate,
+        imageUrl: finalImageUrl,
+        chainTxHash: 'Minting on-chain...', 
+        ingredients: ingredientsList,
+        price: Number(price) || 0, // <-- Dynamically grabs your inputted price
+        quantityAvailable: Number(quantity) || 0, // <-- Dynamically grabs your inputted quantity
         createdAt: serverTimestamp(),
       });
 
-      // Reset Form
+      // 2. Save a shadow record to Orders so the Python API successfully captures and updates it
+      await addDoc(collection(db, 'orders'), {
+        blendName: finalName,
+        batchId: finalBatchCode,
+        type: 'Admin Product Batch',
+        status: 'Batch Minted',
+        price: 0,
+        ingredients: ingredientsList,
+        createdAt: serverTimestamp(),
+        isMintedOnChain: false
+      });
+
+      // 3. Automatically trigger your Python FastAPI Backend to mint live on NEAR
+      try {
+        const response = await fetch('http://localhost:8000/api/mint-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            batchId: finalBatchCode,
+            blendName: finalName,
+            producedBy: finalProducedBy,
+            ingredients: ingredientsList,
+          }),
+        });
+
+        const result = await response.json();
+
+        // 4. Update product document with the real live NEAR transaction hash
+        if (result.status === 'success') {
+          await updateDoc(doc(db, 'products', productRef.id), {
+            chainTxHash: result.nearHash
+          });
+        }
+      } catch (backendError) {
+        console.error("Could not connect to Python backend for auto-minting:", backendError);
+      }
+
+      // Reset Form fields completely blank
       setBatchCode('');
       setName('');
-      setQuantity('100');
-      setProducedBy('steph');
+      setCategory('Smoothies');
+      setPrice('');
+      setQuantity('');
+      setProducedBy('');
       setProducedDate('');
       setExpiryDate('');
-      setNearTxUrl('');
-      setNotes('');
+      setIngredientsInput('');
+      setImageUrl('');
       setShowModal(false);
-      alert(`Batch ${finalBatchCode} logged!`);
+      alert(`Batch ${finalBatchCode} logged and automatically minted to NEAR blockchain!`);
     } catch (err) {
       console.error('Error adding batch:', err);
+      alert('Error creating batch.');
     } finally {
       setSubmitting(false);
     }
@@ -102,7 +157,7 @@ export default function AdminProducts() {
       {/* Main Workspace */}
       <main className="container mx-auto px-8 py-8 max-w-7xl space-y-6 print:hidden">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-black text-[#2B1E1A]">Product Batches</h1>
+          <h1 className="text-xl font-black text-[#2B1E1A]">Product Batches & Menu Inventory</h1>
 
           <Button
             onClick={() => setShowModal(true)}
@@ -118,8 +173,11 @@ export default function AdminProducts() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-[#F5EFEA]/60 border-b border-[#EAE2DC] text-[11px] font-extrabold text-gray-500">
+                  <th className="py-3.5 px-6">Image</th>
                   <th className="py-3.5 px-6">Batch Code</th>
                   <th className="py-3.5 px-6">Product</th>
+                  <th className="py-3.5 px-6">Category</th>
+                  <th className="py-3.5 px-6">Price</th> {/* <-- Added Price Header */}
                   <th className="py-3.5 px-6">Produced</th>
                   <th className="py-3.5 px-6">Qty</th>
                   <th className="py-3.5 px-6">Expiry</th>
@@ -131,19 +189,26 @@ export default function AdminProducts() {
               <tbody className="divide-y divide-[#EAE2DC] text-xs font-semibold text-[#2B1E1A]">
                 {products.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-12 text-center text-gray-400">
+                    <td colSpan={11} className="py-12 text-center text-gray-400">
                       <Package className="h-8 w-8 mx-auto mb-2 text-gray-300" />
                       <p>No product batches logged yet.</p>
                     </td>
                   </tr>
                 ) : (
                   products.map((p, idx) => {
-                    const isMinted = Boolean(p.chainTxHash && p.chainTxHash.trim().length > 0);
+                    const isMinted = Boolean(p.chainTxHash && p.chainTxHash.trim().length > 0 && p.chainTxHash !== 'Minting on-chain...');
                     const safeBatchCode = p.batchId || `MX-BATCH-${(100000 + idx * 57).toString()}`;
                     const safeProductName = p.name || 'Organic Fruit Smoothie';
 
                     return (
                       <tr key={p.id} className="hover:bg-gray-50/50 transition">
+                        <td className="py-4 px-6">
+                          <img 
+                            src={p.imageUrl || 'https://images.unsplash.com/photo-1553530666-ba11a7da3888?w=500'} 
+                            alt={safeProductName} 
+                            className="w-10 h-10 rounded-xl object-cover border border-[#EAE2DC]"
+                          />
+                        </td>
                         <td className="py-4 px-6 font-mono text-gray-600 text-[11px] font-bold">
                           {safeBatchCode}
                         </td>
@@ -152,12 +217,23 @@ export default function AdminProducts() {
                           {safeProductName}
                         </td>
 
+                        <td className="py-4 px-6">
+                          <span className="bg-[#FAF6F3] text-[#E11D48] text-[10px] font-extrabold px-2.5 py-1 rounded-full border border-[#EAE2DC]">
+                            {p.category || 'Smoothies'}
+                          </span>
+                        </td>
+                        
+                        {/* <-- Added Price Data */}
+                        <td className="py-4 px-6 font-extrabold text-[#E11D48]">
+                          ₦{p.price?.toLocaleString() || 0}
+                        </td>
+
                         <td className="py-4 px-6 text-gray-500 font-medium">
                           {p.producedDate || '4 Aug 2026'}
                         </td>
 
                         <td className="py-4 px-6 font-bold text-[#2B1E1A]">
-                          {p.quantityAvailable ?? 100}
+                          {p.quantityAvailable ?? 0}
                         </td>
 
                         <td className="py-4 px-6 text-gray-500 font-medium">
@@ -165,13 +241,13 @@ export default function AdminProducts() {
                         </td>
 
                         <td className="py-4 px-6 text-gray-600 font-medium">
-                          {p.producedBy || 'steph'}
+                          {p.producedBy || 'Admin'}
                         </td>
 
                         <td className="py-4 px-6">
                           {isMinted ? (
                             <a
-                              href={p.chainTxHash?.startsWith('http') ? p.chainTxHash : `https://explorer.testnet.near.org/transactions/${p.chainTxHash}`}
+                              href={`https://explorer.testnet.near.org/transactions/${p.chainTxHash}`}
                               target="_blank"
                               rel="noreferrer"
                               className="inline-flex items-center gap-1 bg-[#E11D48] hover:bg-[#BE123C] text-white text-[10px] font-extrabold px-3 py-1 rounded-full transition shadow-sm"
@@ -180,7 +256,7 @@ export default function AdminProducts() {
                             </a>
                           ) : (
                             <span className="text-[10px] font-bold text-gray-400">
-                              Not minted
+                              {p.chainTxHash === 'Minting on-chain...' ? 'Minting...' : 'Not minted'}
                             </span>
                           )}
                         </td>
@@ -211,7 +287,7 @@ export default function AdminProducts() {
         </div>
       </main>
 
-      {/* Modal 1: Log New Batch */}
+      {/* Modal 1: Log New Batch Form */}
       {showModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl border border-[#EAE2DC]">
@@ -245,14 +321,15 @@ export default function AdminProducts() {
                 </div>
 
                 <div>
-                  <input
-                    type="number"
-                    value={quantity}
-                    onChange={(e) => setQuantity(e.target.value)}
-                    placeholder="Qty"
-                    className="w-full bg-white border border-[#EAE2DC] rounded-xl px-3 py-2.5 focus:outline-none focus:border-[#E11D48] text-xs font-medium"
-                    required
-                  />
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="w-full bg-white border border-[#EAE2DC] rounded-xl px-2 py-2.5 focus:outline-none focus:border-[#E11D48] text-xs font-bold"
+                  >
+                    <option value="Smoothies">Smoothie</option>
+                    <option value="Juices">Juice</option>
+                    <option value="Parfaits">Parfait</option>
+                  </select>
                 </div>
               </div>
 
@@ -278,36 +355,59 @@ export default function AdminProducts() {
                 </div>
               </div>
 
+              {/* THREE COLUMN GRID: Produced By, Quantity, and Price */}
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <input
+                    type="text"
+                    value={producedBy}
+                    onChange={(e) => setProducedBy(e.target.value)}
+                    placeholder="Produced By"
+                    className="w-full bg-white border border-[#EAE2DC] rounded-xl px-3 py-2.5 focus:outline-none focus:border-[#E11D48] text-xs font-medium"
+                    required
+                  />
+                </div>
+                <div>
+                  <input
+                    type="number"
+                    value={quantity}
+                    onChange={(e) => setQuantity(e.target.value)}
+                    placeholder="Qty"
+                    className="w-full bg-white border border-[#EAE2DC] rounded-xl px-3 py-2.5 focus:outline-none focus:border-[#E11D48] text-xs font-medium"
+                    required
+                  />
+                </div>
+                <div>
+                  <input
+                    type="number"
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value)}
+                    placeholder="Price (₦)"
+                    className="w-full bg-white border border-[#EAE2DC] rounded-xl px-3 py-2.5 focus:outline-none focus:border-[#E11D48] text-xs font-medium"
+                    required
+                  />
+                </div>
+              </div>
+
               <div>
                 <input
                   type="text"
-                  value={producedBy}
-                  onChange={(e) => setProducedBy(e.target.value)}
-                  placeholder="Produced By"
+                  value={imageUrl}
+                  onChange={(e) => setImageUrl(e.target.value)}
+                  placeholder="Image URL (e.g. https://...image.jpg)"
                   className="w-full bg-white border border-[#EAE2DC] rounded-xl px-4 py-2.5 focus:outline-none focus:border-[#E11D48] text-xs font-medium"
                 />
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-gray-500 mb-1">NEAR Transaction Hash URL</label>
                 <input
                   type="text"
-                  value={nearTxUrl}
-                  onChange={(e) => setNearTxUrl(e.target.value)}
-                  placeholder="https://explorer.near.org/transactions/..."
+                  value={ingredientsInput}
+                  onChange={(e) => setIngredientsInput(e.target.value)}
+                  placeholder="Ingredients (comma separated e.g. Mango, Oat Milk)"
                   className="w-full bg-white border border-[#EAE2DC] rounded-xl px-4 py-2.5 focus:outline-none focus:border-[#E11D48] text-xs font-medium"
                 />
-                <p className="text-[10px] text-gray-400 mt-1 font-medium">Paste the NEAR explorer URL after minting externally</p>
-              </div>
-
-              <div>
-                <input
-                  type="text"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Notes"
-                  className="w-full bg-white border border-[#EAE2DC] rounded-xl px-4 py-2.5 focus:outline-none focus:border-[#E11D48] text-xs font-medium"
-                />
+                <p className="text-[10px] text-gray-400 mt-1 font-medium">These will be permanently embedded onto the NEAR blockchain.</p>
               </div>
 
               <div className="pt-2">
@@ -316,7 +416,7 @@ export default function AdminProducts() {
                   disabled={submitting}
                   className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white font-extrabold rounded-xl py-3 text-xs shadow-md"
                 >
-                  {submitting ? 'Creating Batch...' : 'Create Batch'}
+                  {submitting ? 'Minting on NEAR Blockchain...' : 'Create & Mint Batch'}
                 </Button>
               </div>
             </form>
@@ -386,7 +486,7 @@ export default function AdminProducts() {
               </Button>
               <Button
                 onClick={() => window.print()}
-                className="w-1/2 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold rounded-xl text-xs py-1.5"
+                className="w-1/2 bg-[#E11D48] text-white hover:bg-[#BE123C] font-bold rounded-xl text-xs py-1.5"
               >
                 Print Label
               </Button>
